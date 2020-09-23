@@ -653,3 +653,69 @@ class ErrorsTest(object):
             "message": "error",
             "test": "value",
         }
+
+    def test_raising_httpexception_does_not_send_signal_to_flask_request_exception(self, app, client):
+        from flask.signals import got_request_exception
+        from werkzeug.exceptions import NotFound
+
+        exception_handler_called_with = []
+
+        def exception_handler(sender, exception, **kwargs):
+            exception_handler_called_with.append(exception)
+
+        got_request_exception.connect(exception_handler)
+
+        class SomeException(RuntimeError): pass
+
+        # first plain Flask behaviour
+
+        @app.route('/raises-some-exception')
+        def raises_some_exception():
+            raise SomeException()
+
+        @app.route('/raises-not-found')
+        def raises_notfound():
+            raise NotFound()
+
+        response = client.get('/raises-some-exception')
+
+        assert response.status_code == 500
+        assert isinstance(exception_handler_called_with[0], SomeException), 'Exception handler should be called for an ' \
+                                                                            'exception that is not a HTTPException'
+        assert len(exception_handler_called_with) == 1
+
+        exception_handler_called_with.clear()
+
+        response = client.get('/raises-not-found')
+
+        assert response.status_code == 404
+        assert len(exception_handler_called_with) == 0, 'Exception handler should not be called for a NotFound'
+
+        # now the API behaviour
+
+        exception_handler_called_with.clear()
+        api = restx.Api(app)
+
+        @api.route("/api-raises-some-exception/", endpoint="api-raises-some-exception")
+        class RaisesSomeException(restx.Resource):
+            def get(self):
+                raise SomeException()
+
+        @api.route("/api-raises-not-found/", endpoint="api-raises-not-found")
+        class RaisesNotFound(restx.Resource):
+            def get(self):
+                raise NotFound()
+
+        response = client.get('/api-raises-some-exception/')
+
+        assert response.status_code == 500
+        assert isinstance(exception_handler_called_with[0], SomeException), 'Exception handler should be called for an ' \
+                                                                            'exception that is not a HTTPException'
+        assert len(exception_handler_called_with) == 1
+
+        exception_handler_called_with.clear()
+
+        response = client.get('/api-raises-not-found/')
+
+        assert response.status_code == 404
+        assert len(exception_handler_called_with) == 0, 'Exception handler should not be called for a NotFound'
