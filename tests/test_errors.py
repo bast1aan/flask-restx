@@ -428,7 +428,7 @@ class ErrorsTest(object):
     def test_handle_error_signal(self, app):
         api = restx.Api(app)
 
-        exception = BadRequest()
+        exception = RuntimeError()
 
         recorded = []
 
